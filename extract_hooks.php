@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Usage : php doctools/extract_hooks.php prestashop_8.0.0-rc.1+build.1/ doctools/hooks/
+ * Usage : php doctools/extract_hooks.php prestashop_8.0.0-rc.1+build.1/ devdocs-site/src/content/8/modules/concepts/hooks/list-hooks/
  */
 
 $path = $argv[1];
@@ -10,15 +10,27 @@ $hookMarkdownDir = $argv[2];
 $skipDirs = ["var/cache", "vendor"];
 
 $regexList = [
-    '/Hook\:\:exec\(\'(.*?)\'\,(.*?)(\;|(Hook))/is', // legacy
-    '/dispatchHook\(\'(.*?)\'\,(.*?)\;/is', // symfony
-    '/\{hook\ h\=\'(.*?)\'(.*)\}/i', // smarty
-    '/\{\{\ renderhook\(\'(.*?)\'(.*?)\}\}/is' // twig
+    "legacy" => [
+        '/Hook\:\:exec\(\'(.*?)\'\,\ \[(.*?)\](\,\ (.*))?\)(\;|\,)/is', // legacy, with arguments, mono or multiline
+        '/Hook\:\:exec\(\'(.*?)\'\)(\;|\,)/i', // legacy, no arguments, monoline
+    ],
+    "symfony" => [
+        '/dispatchHook\(\'(.*?)\'\,(.*?)\;/is', // symfony
+    ],
+    "smarty" => [
+        '/\{hook\ h\=\'(.*?)\'(.*)\}/i', // smarty
+    ],
+    "twig" => [
+        '/\{\{\ renderhook\(\'(.*?)\'(.*?)\}\}/is', // twig
+        '/\{\{\ renderhooksarray\(\'(.*?)\'(.*?)\}\}/is' // twig
+    ]
 ];
 
 // clean hook dir
 foreach(glob($hookMarkdownDir . "*") as $file){
-    unlink($file);
+    if(false === strpos($file, "_index.md")){
+        unlink($file);
+    }
 }
 
 $files = listAllFiles($path);
@@ -36,34 +48,67 @@ foreach($files as $file){
     }
 
     if(!$skipFile){
-        foreach($regexList as $pattern){
-            $hooksInFile = findHooksInFile($file, $path, $pattern);
-            $hookList = array_merge($hookList, $hooksInFile);
+        foreach($regexList as $patternType => $patterns){
+            foreach($patterns as $pattern){                
+                $hooksInFile = findHooksInFileRegex($file, $path, $patternType, $pattern);
+                $hookList = array_merge($hookList, $hooksInFile);
+            }
         }
     }
 }
 
 foreach($hookList as $hookSlug => $hookArray){
     
+    $locatedIn = [];
+    $types = [];
+
+    $locatedIn = array_unique(
+        array_map(
+            fn($hookInfo) => $hookInfo["file"], 
+            $hookArray
+        )
+    );
+
+    $hookTypes = array_unique(
+        array_map(
+            fn($hookInfo) => $hookInfo["hookType"], 
+            $hookArray
+        )
+    );
+
+    $types = guessType($hookArray[0]["name"], $locatedIn);
+
+    $locatedInStr = "\n\t- " . implode("\n\t- ", $locatedIn);
+    $hookTypesStr = "\n\t- " . implode("\n\t- ", $hookTypes);
+    $typesStr = "\n\t- " . implode("\n\t- ", $types);
+
     $content = <<<EOF
+---
+menuTitle: {$hookArray[0]["name"]}
+title: {$hookArray[0]["name"]}
+hidden: true
+files:{$locatedInStr}
+types:{$typesStr}
+hookTypes:{$hookTypesStr}
+---
+
 # Hook : {$hookArray[0]["name"]}
 
+Located in :
+{$locatedInStr}
+
+## Parameters
+
+```php
+{$hookArray[0]["fullCall"]}
+```
 EOF;
-
-    foreach($hookArray as $hookInfo){
-        $content .= <<<EOF
-{$hookInfo["file"]} :
-
-{$hookInfo["fullCall"]}
-
-EOF;
-    }
 
     $file = file_put_contents($hookMarkdownDir . $hookSlug . ".md", $content);
 
 }
 
-function findHooksInFile($file, $stripDir, $pattern)
+function findHooksInFileRegex($file, $stripDir, $patternType, $pattern)
 {
     $content = file_get_contents($file);
 
@@ -80,13 +125,25 @@ function findHooksInFile($file, $stripDir, $pattern)
 
     if(!empty($result[1])){
         for($i = 0; $i < sizeof($result[1]); $i++){
-            $hookName = $result[1][$i];
+            $hookName = cleanHookName(cleanString($result[1][$i]));
             $fullCall = $result[0][$i];
-            $hooksInFile[cleanString($hookName)][] = ["name" => $hookName, "file" => $fileName, "fullCall" => $fullCall];
+
+            $hooksInFile[$hookName][] = [
+                "name" => $hookName, 
+                "file" => $fileName, 
+                "fullCall" => $fullCall,
+                "hookType" => $patternType
+            ];
         }
     } 
 
     return $hooksInFile;
+}
+
+function findHooksInFileVariant($file, $stripDir)
+{
+
+    return [];
 }
 
 function listAllFiles($dir) 
@@ -111,4 +168,48 @@ function cleanString($string)
 {
     $string = str_replace(' ', '-', $string); 
     return preg_replace('/[^A-Za-z0-9\-]/', '', $string); 
+}
+
+function guessType($hookName, $locatedIn)
+{
+    $types = [];
+    
+    if(false !== strpos($hookName, "Admin")){
+        $types[] = "backoffice";
+    }
+
+    if(false !== strpos($hookName, "actionObject")){
+        $types[] = "backoffice";
+        $types[] = "frontoffice";
+    }
+
+    foreach($locatedIn as $file){
+        if(false !== strpos($file, "Admin")){
+            $types[] = "backoffice";
+        }
+    }
+
+    if(empty($types)){
+        $types[] = "frontoffice";
+    }
+
+    return array_unique($types);
+}
+
+function cleanHookName($hookName){
+
+    $hookName = str_replace([
+        '--this-getFullyQualifiedName--',
+        '--getclassthis--ucfirstthis-action--',
+        '--this-controllername--',
+        '--ucfirstthis-action--',
+    ], [
+        '<ClassName>',
+        '<ClassName><Action>',
+        '<Controller>',
+        '<Action>'
+    ], $hookName);
+
+    return $hookName;
+
 }
