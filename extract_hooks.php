@@ -12,7 +12,7 @@ $skipDirs = ["var/cache", "vendor"];
 $regexList = [
     "legacy" => [
         '/Hook\:\:exec\(\'(.*?)\'\,\ \[(.*?)\](\,\ (.*))?\)(\;|\,)/is', // legacy, with arguments, mono or multiline
-        '/Hook\:\:exec\(\'(.*?)\'\)(\;|\,)/i', // legacy, no arguments, monoline
+        '/Hook\:\:exec\(\'(.*?)\'(.*?)?\)(\;|\,)/i', // legacy, no arguments, monoline
     ],
     "symfony" => [
         '/dispatchHook\(\'(.*?)\'\,(.*?)\;/is', // symfony
@@ -35,6 +35,7 @@ foreach(glob($hookMarkdownDir . "*") as $file){
 
 $files = listAllFiles($path);
 $hookList = [];
+$count = 0;
 
 foreach($files as $file){
     $hooksInFile = [];
@@ -50,7 +51,7 @@ foreach($files as $file){
     if(!$skipFile){
         foreach($regexList as $patternType => $patterns){
             foreach($patterns as $pattern){                
-                $hooksInFile = findHooksInFileRegex($file, $path, $patternType, $pattern);
+                $hooksInFile = findHooksInFileRegex($file, $path, $patternType, $pattern, $count);
                 $hookList = array_merge($hookList, $hooksInFile);
             }
         }
@@ -78,9 +79,9 @@ foreach($hookList as $hookSlug => $hookArray){
 
     $types = guessType($hookArray[0]["name"], $locatedIn);
 
-    $locatedInStr = "\n\t- " . implode("\n\t- ", $locatedIn);
-    $hookTypesStr = "\n\t- " . implode("\n\t- ", $hookTypes);
-    $typesStr = "\n\t- " . implode("\n\t- ", $types);
+    $locatedInStr = "\n  - " . implode("\n  - ", $locatedIn);
+    $hookTypesStr = "\n  - " . implode("\n  - ", $hookTypes);
+    $typesStr = "\n  - " . implode("\n  - ", $types);
 
     $content = <<<EOF
 ---
@@ -108,7 +109,7 @@ EOF;
 
 }
 
-function findHooksInFileRegex($file, $stripDir, $patternType, $pattern)
+function findHooksInFileRegex($file, $stripDir, $patternType, $pattern, &$count)
 {
     $content = file_get_contents($file);
 
@@ -127,7 +128,7 @@ function findHooksInFileRegex($file, $stripDir, $patternType, $pattern)
         for($i = 0; $i < sizeof($result[1]); $i++){
             $hookName = cleanHookName(cleanString($result[1][$i]));
             $fullCall = $result[0][$i];
-
+            $count++;
             $hooksInFile[$hookName][] = [
                 "name" => $hookName, 
                 "file" => $fileName, 
@@ -199,13 +200,13 @@ function guessType($hookName, $locatedIn)
 function cleanHookName($hookName){
 
     $hookName = str_replace([
-        '--this-getFullyQualifiedName--',
         '--getclassthis--ucfirstthis-action--',
+        '--this-getFullyQualifiedName--',
         '--this-controllername--',
         '--ucfirstthis-action--',
     ], [
-        '<ClassName>',
         '<ClassName><Action>',
+        '<ClassName>',
         '<Controller>',
         '<Action>'
     ], $hookName);
