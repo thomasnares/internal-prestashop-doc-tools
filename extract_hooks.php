@@ -16,6 +16,7 @@ $regexList = [
     ],
     "symfony" => [
         '/dispatchHook\(\'(.*?)\'\,(.*?)\;/is', // symfony
+        '/dispatchWithParameters\(\'(.*?)\'\,(.*?)\;/is' // symfony, new method ?
     ],
     "smarty" => [
         '/\{hook\ h\=\'(.*?)\'(.*)\}/i', // smarty
@@ -25,6 +26,9 @@ $regexList = [
         '/\{\{\ renderhooksarray\(\'(.*?)\'(.*?)\}\}/is' // twig
     ]
 ];
+
+$hookDescriptionReferenceXml = "https://raw.githubusercontent.com/PrestaShop/PrestaShop/develop/install-dev/data/xml/hook.xml";
+$hookDescriptions = extractHookDescription($hookDescriptionReferenceXml);
 
 // clean hook dir
 foreach(glob($hookMarkdownDir . "*") as $file){
@@ -81,30 +85,54 @@ foreach($hookList as $hookSlug => $hookArray){
 
     $locatedInStr = "\n  - " . implode("\n  - ", $locatedIn);
     $hookTypesStr = "\n  - " . implode("\n  - ", $hookTypes);
-    $typesStr = "\n  - " . implode("\n  - ", $types);
+    $locationsStr = "\n  - " . implode("\n  - ", $types);
+
+    $referenceTitle = isset($hookDescriptions[$hookArray[0]["name"]]) ? $hookDescriptions[$hookArray[0]["name"]]["title"] : "";
+    $referenceDescription = isset($hookDescriptions[$hookArray[0]["name"]]) ? $hookDescriptions[$hookArray[0]["name"]]["description"] : "";
+
+    $notice = "";
+
+    if($referenceTitle != ""){
+        $notice = <<<EOF
+
+{{% notice tip %}}
+**{$referenceTitle}:** 
+
+{$referenceDescription}
+{{% /notice %}}
+
+EOF;
+    }
 
     $content = <<<EOF
 ---
 menuTitle: {$hookArray[0]["name"]}
-title: {$hookArray[0]["name"]}
+Title: {$hookArray[0]["name"]}
 hidden: true
+hookTitle: {$referenceTitle}
 files:{$locatedInStr}
-types:{$typesStr}
-hookTypes:{$hookTypesStr}
+locations:{$locationsStr}
+types:{$hookTypesStr}
 ---
 
 # Hook : {$hookArray[0]["name"]}
 
-Located in :
-{$locatedInStr}
+## Informations
+{$notice}
+Hook locations: {$locationsStr}
 
-## Parameters
+Hook types: {$hookTypesStr}
+
+Located in: {$locatedInStr}
+
+## Hook call with parameters
 
 ```php
 {$hookArray[0]["fullCall"]}
 ```
 EOF;
 
+    echo $hookMarkdownDir . $hookSlug . ".md\n";
     $file = file_put_contents($hookMarkdownDir . $hookSlug . ".md", $content);
 
 }
@@ -197,20 +225,47 @@ function guessType($hookName, $locatedIn)
     return array_unique($types);
 }
 
-function cleanHookName($hookName){
+function cleanHookName($hookName)
+{
 
     $hookName = str_replace([
         '--getclassthis--ucfirstthis-action--',
         '--this-getFullyQualifiedName--',
         '--this-controllername--',
         '--ucfirstthis-action--',
+        '--Containercamelizeform-getName--',
+        '--helperListConfiguration-legacyControllerName--',
+        '--Containercamelizethis-gridId--',
+        '--Containercamelizedefinition-getId--',
+        '--this-camelizeformBuilder-getName--'
     ], [
         '<ClassName><Action>',
         '<ClassName>',
         '<Controller>',
-        '<Action>'
+        '<Action>',
+        '<FormName>',
+        '<LegacyControllerName>',
+        '<GridId>',
+        '<DefinitionId>',
+        '<FormName>'
     ], $hookName);
 
     return $hookName;
 
+}
+
+function extractHookDescription($xmlFile){
+    $xmlContent = simplexml_load_file($xmlFile);
+    $hookDescriptions = [];
+
+    foreach($xmlContent->entities->hook as $node){
+        $hookDescriptions[$node->name->__toString()] = [
+            "name" => $node->name->__toString(),
+            "title" => $node->title->__toString(),
+            "description" => $node->description->__toString()
+        ];
+
+    }
+
+    return $hookDescriptions;
 }
