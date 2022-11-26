@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Usage : php doctools/extract_hooks.php prestashop_8.0.0-rc.1+build.1/ devdocs-site/src/content/8/modules/concepts/hooks/list-hooks/
+ * Usage : php doctools/extract_hooks.php prestashop_8.0.0-rc.1+build.1/ devdocs-site/src/content/8/modules/concepts/hooks/list-of-hooks/
  */
 
 $path = $argv[1];
@@ -11,12 +11,13 @@ $skipDirs = ["var/cache", "vendor"];
 
 $regexList = [
     "legacy" => [
-        '/Hook\:\:exec\(\'(.*?)\'\,\ \[(.*?)\](\,\ (.*))?\)(\;|\,)/is', // legacy, with arguments, mono or multiline
-        '/Hook\:\:exec\(\'(.*?)\'(.*?)?\)(\;|\,)/i', // legacy, no arguments, monoline
+        //'/Hook\:\:exec\((.*?)\'(.*?)\'\,(.*?)\[(.*?)\](\,\ (.*))?\)(\;|\,)/is', // legacy, with arguments, mono or multiline
+        //'/Hook\:\:exec\(\'(.*?)\'(.*?)?\)(\;|\,)/i', // legacy, no arguments, monoline,
+        '/Hook\:\:exec\s*(\(([^(),]*)(?:(?:[^(),]+|,)|(?-2))*\))/is'
     ],
     "symfony" => [
-        '/dispatchHook\(\'(.*?)\'\,(.*?)\;/is', // symfony
-        '/dispatchWithParameters\(\'(.*?)\'\,(.*?)\;/is' // symfony, new method ?
+        '/dispatchHook\s*(\(([^(),]*)(?:(?:[^(),]+|,)|(?-2))*\))/is', // symfony
+        '/dispatchWithParameters\s*(\(([^(),]*)(?:(?:[^(),]+|,)|(?-2))*\))/is' // symfony, other method
     ],
     "smarty" => [
         '/\{hook\ h\=\'(.*?)\'(.*)\}/i', // smarty
@@ -25,6 +26,37 @@ $regexList = [
         '/\{\{\ renderhook\(\'(.*?)\'(.*?)\}\}/is', // twig
         '/\{\{\ renderhooksarray\(\'(.*?)\'(.*?)\}\}/is' // twig
     ]
+];
+
+$deprecated_hooks = [
+    // Back office
+    'backOfficeFooter' => ['from' => '1.7.0.0'],
+    'displayBackOfficeFooter' => ['from' => '1.7.0.0'],
+
+    // Shipping step
+    'displayCarrierList' => ['from' => '1.7.0.0'],
+    'extraCarrier' => ['from' => '1.7.0.0'],
+
+    // Payment step
+    'hookBackBeforePayment' => ['from' => '1.7.0.0'],
+    'hookDisplayBeforePayment' => ['from' => '1.7.0.0'],
+    'hookOverrideTOSDisplay' => ['from' => '1.7.0.0'],
+
+    // Product page
+    'displayProductTabContent' => ['from' => '1.7.0.0'],
+    'displayProductTab' => ['from' => '1.7.0.0'],
+
+    // Order page
+    'displayAdminOrderRight' => ['from' => '1.7.7.0'],
+    'displayAdminOrderLeft' => ['from' => '1.7.7.0'],
+    'displayAdminOrderTabOrder' => ['from' => '1.7.7.0'],
+    'displayAdminOrderTabShip' => ['from' => '1.7.7.0'],
+    'displayAdminOrderContentOrder' => ['from' => '1.7.7.0'],
+    'displayAdminOrderContentShip' => ['from' => '1.7.7.0'],
+
+    // Controller
+    'actionAjaxDieBefore' => ['from' => '1.6.1.1'],
+    'actionGetProductPropertiesAfter' => ['from' => '1.7.8.0'],
 ];
 
 $hookDescriptionReferenceXml = "https://raw.githubusercontent.com/PrestaShop/PrestaShop/develop/install-dev/data/xml/hook.xml";
@@ -62,8 +94,12 @@ foreach($files as $file){
     }
 }
 
+$extractedHookNames = [];
+
 foreach($hookList as $hookSlug => $hookArray){
     
+    $hookName = $hookArray[0]["name"];
+
     $locatedIn = [];
     $types = [];
 
@@ -74,24 +110,25 @@ foreach($hookList as $hookSlug => $hookArray){
         )
     );
 
-    $hookTypes = array_unique(
+    $locatedInLinks = array_unique(
         array_map(
-            fn($hookInfo) => $hookInfo["hookType"], 
+            fn($hookInfo) => "[https://github.com/PrestaShop/PrestaShop/blob/8.0.x/" . $hookInfo["file"] ."](". $hookInfo["file"] .")", 
             $hookArray
         )
     );
 
-    $types = guessType($hookArray[0]["name"], $locatedIn);
+    $type = guessType($hookName, $locatedIn);
+    $locations = guessLocations($hookName, $locatedIn);
 
     $locatedInStr = "\n  - " . implode("\n  - ", $locatedIn);
-    $hookTypesStr = "\n  - " . implode("\n  - ", $hookTypes);
-    $locationsStr = "\n  - " . implode("\n  - ", $types);
+    $locatedInLinksStr = "\n  - " . implode("\n  - ", $locatedInLinks);
+    $locationsStr = "\n  - " . implode("\n  - ", $locations);
+    $typeStr = "\n  - " . $type;
 
-    $referenceTitle = isset($hookDescriptions[$hookArray[0]["name"]]) ? $hookDescriptions[$hookArray[0]["name"]]["title"] : "";
-    $referenceDescription = isset($hookDescriptions[$hookArray[0]["name"]]) ? $hookDescriptions[$hookArray[0]["name"]]["description"] : "";
+    $referenceTitle = isset($hookDescriptions[$hookName]) ? $hookDescriptions[$hookName]["title"] : "";
+    $referenceDescription = isset($hookDescriptions[$hookName]) ? $hookDescriptions[$hookName]["description"] : "";
 
     $notice = "";
-
     if($referenceTitle != ""){
         $notice = <<<EOF
 
@@ -104,26 +141,37 @@ foreach($hookList as $hookSlug => $hookArray){
 EOF;
     }
 
+    $deprecatedNotice = "";
+    if(array_key_exists($hookName, $deprecated_hooks)){
+        $deprecatedNotice = <<<EOF
+
+{{% notice warning %}}
+**Deprecated:** Since {$deprecated_hooks[$hookName]['from']}
+{{% /notice %}}
+
+EOF;
+    }
+
     $content = <<<EOF
 ---
-menuTitle: {$hookArray[0]["name"]}
-Title: {$hookArray[0]["name"]}
+menuTitle: {$hookName}
+Title: {$hookName}
 hidden: true
 hookTitle: {$referenceTitle}
 files:{$locatedInStr}
 locations:{$locationsStr}
-types:{$hookTypesStr}
+type:{$typeStr}
 ---
 
-# Hook : {$hookArray[0]["name"]}
+# Hook {$hookName}
 
-## Informations
-{$notice}
+## Information
+{$notice}{$deprecatedNotice}
 Hook locations: {$locationsStr}
 
-Hook types: {$hookTypesStr}
+Hook type: {$typeStr}
 
-Located in: {$locatedInStr}
+Located in: {$locatedInLinksStr}
 
 ## Hook call with parameters
 
@@ -135,7 +183,25 @@ EOF;
     echo $hookMarkdownDir . $hookSlug . ".md\n";
     $file = file_put_contents($hookMarkdownDir . $hookSlug . ".md", $content);
 
+    $extractedHookNames[] = $hookName;
 }
+
+
+// list missing hooks against actual doc :
+
+$actualDocumentation = 'https://raw.githubusercontent.com/PrestaShop/docs/8.x/modules/concepts/hooks/list-of-hooks.md';
+$actualDocumentationHooks = extractActualDocumentation($actualDocumentation);
+
+echo "Hooks found in actual devdocs, but not in this extract :\n";
+foreach($actualDocumentationHooks as $hookName){
+    if(!in_array($hookName, $extractedHookNames)){
+        echo $hookName . "\n";
+    }
+}
+
+/**
+ * functions
+ */
 
 function findHooksInFileRegex($file, $stripDir, $patternType, $pattern, &$count)
 {
@@ -152,9 +218,13 @@ function findHooksInFileRegex($file, $stripDir, $patternType, $pattern, &$count)
 
     $fileName = str_replace($stripDir, "", $file);
 
-    if(!empty($result[1])){
-        for($i = 0; $i < sizeof($result[1]); $i++){
-            $hookName = cleanHookName(cleanString($result[1][$i]));
+    if(!empty($result[0])){ var_dump($result);
+        for($i = 0; $i < sizeof($result[0]); $i++){
+            if(isset($result[2][$i])){
+                $hookName = cleanHookName(cleanString($result[2][$i]));
+            } else {
+                $hookName = cleanHookName(cleanString($result[1][$i]));
+            }
             $fullCall = $result[0][$i];
             $count++;
             $hooksInFile[$hookName][] = [
@@ -167,12 +237,6 @@ function findHooksInFileRegex($file, $stripDir, $patternType, $pattern, &$count)
     } 
 
     return $hooksInFile;
-}
-
-function findHooksInFileVariant($file, $stripDir)
-{
-
-    return [];
 }
 
 function listAllFiles($dir) 
@@ -195,11 +259,12 @@ function listAllFiles($dir)
 
 function cleanString($string) 
 {
+    $string = trim($string);
     $string = str_replace(' ', '-', $string); 
     return preg_replace('/[^A-Za-z0-9\-]/', '', $string); 
 }
 
-function guessType($hookName, $locatedIn)
+function guessLocations($hookName, $locatedIn)
 {
     $types = [];
     
@@ -225,9 +290,22 @@ function guessType($hookName, $locatedIn)
     return array_unique($types);
 }
 
+function guessType($hookName, $locatedIn)
+{
+    
+    if(false !== strpos($hookName, "ction")){
+        return "action";
+    }
+
+    if(false !== strpos($hookName, "isplay")){
+        return "display";
+    }
+
+    return "";
+}
+
 function cleanHookName($hookName)
 {
-
     $hookName = str_replace([
         '--getclassthis--ucfirstthis-action--',
         '--this-getFullyQualifiedName--',
@@ -251,7 +329,6 @@ function cleanHookName($hookName)
     ], $hookName);
 
     return $hookName;
-
 }
 
 function extractHookDescription($xmlFile){
@@ -268,4 +345,24 @@ function extractHookDescription($xmlFile){
     }
 
     return $hookDescriptions;
+}
+
+function extractActualDocumentation($actualDocumentationUrl)
+{
+    $documentedHooks = [];
+    $contents = file($actualDocumentationUrl);
+    $previousLine = "";
+    $actualLine = "";
+    foreach($contents as $content){
+        $previousLine = $actualLine;
+        $actualLine = str_replace(
+            ["\n", "&lt;"], 
+            ["", "<"], 
+            trim($content)
+        );
+        if($actualLine == ":"){
+            $documentedHooks[] = $previousLine;
+        }
+    }
+    return $documentedHooks;
 }
