@@ -11,8 +11,8 @@ $skipDirs = ["var/cache", "vendor"];
 
 $regexList = [
     "legacy" => [
-        //'/Hook\:\:exec\((.*?)\'(.*?)\'\,(.*?)\[(.*?)\](\,\ (.*))?\)(\;|\,)/is', // legacy, with arguments, mono or multiline
-        //'/Hook\:\:exec\(\'(.*?)\'(.*?)?\)(\;|\,)/i', // legacy, no arguments, monoline,
+        '/Hook\:\:exec\((.*?)\'(.*?)\'\,(.*?)\[(.*?)\](\,\ (.*))?\)(\;|\,)/is', // legacy, with arguments, mono or multiline
+        '/Hook\:\:exec\(\'(.*?)\'(.*?)?\)(\;|\,)/i', // legacy, no arguments, monoline,
         '/Hook\:\:exec\s*(\(([^(),]*)(?:(?:[^(),]+|,)|(?-2))*\))/is'
     ],
     "symfony" => [
@@ -59,8 +59,27 @@ $deprecated_hooks = [
     'actionGetProductPropertiesAfter' => ['from' => '1.7.8.0'],
 ];
 
+$skipHooks = [
+    "this-getHookName",
+    "paramsh",
+    "new-Hook",
+    "hookName",
+    "HookInterface-hook",
+    "displayBackOfficeHeader-----------------------------Fetch-Employee-Menu--------menuLinksCollections--new-ActionsBarButtonsCollection--------Hookexec------------displayBackOfficeEmployeeMenu",
+    "actionObject--this-getFullyQualifiedName",
+    "actionAdmin--ucfirst",
+    "action--getclass",
+    'actionthis-hookNameSave'
+];
+
 $hookDescriptionReferenceXml = "https://raw.githubusercontent.com/PrestaShop/PrestaShop/develop/install-dev/data/xml/hook.xml";
 $hookDescriptions = extractHookDescription($hookDescriptionReferenceXml);
+
+$hookAliasesReferenceXml = "https://raw.githubusercontent.com/PrestaShop/PrestaShop/develop/install-dev/data/xml/hook_alias.xml";
+$hookAliases = extractHookAliases($hookAliasesReferenceXml);
+
+$parametersReferenceMd = "https://raw.githubusercontent.com/PrestaShop/docs/8.x/modules/concepts/hooks/list-of-hooks.md";
+$parameters = extractParameters($parametersReferenceMd);
 
 // clean hook dir
 foreach(glob($hookMarkdownDir . "*") as $file){
@@ -100,6 +119,10 @@ foreach($hookList as $hookSlug => $hookArray){
     
     $hookName = $hookArray[0]["name"];
 
+    if(in_array($hookName, $skipHooks)){
+        continue;
+    }
+
     $locatedIn = [];
     $types = [];
 
@@ -123,6 +146,12 @@ foreach($hookList as $hookSlug => $hookArray){
     $locatedInStr = "\n  - " . implode("\n  - ", $locatedIn);
     $locatedInLinksStr = "\n  - " . implode("\n  - ", $locatedInLinks);
     $locationsStr = "\n  - " . implode("\n  - ", $locations);
+
+    $aliasesStr = "";
+    if(array_key_exists($hookName, $hookAliases)){
+        $aliasesStr = "\n - " . implode("\n - ", $hookAliases[$hookName]);
+    }
+
     $typeStr = "\n  - " . $type;
 
     $referenceTitle = isset($hookDescriptions[$hookName]) ? $hookDescriptions[$hookName]["title"] : "";
@@ -161,9 +190,24 @@ hookTitle: {$referenceTitle}
 files:{$locatedInStr}
 locations:{$locationsStr}
 type:{$typeStr}
+hookAliases:{$aliasesStr}
 ---
 
 # Hook {$hookName}
+EOF;
+
+if($aliasesStr != ""){
+    $content .= <<<EOF
+
+
+Aliases: {$aliasesStr}
+
+
+EOF;   
+}
+
+    $content .= <<<EOF
+
 
 ## Information
 {$notice}{$deprecatedNotice}
@@ -172,8 +216,22 @@ Hook locations: {$locationsStr}
 Hook type: {$typeStr}
 
 Located in: {$locatedInLinksStr}
+EOF;
 
-## Hook call with parameters
+if(isset($parameters[$hookName])){
+    $content .= <<<EOF
+
+
+## Parameters details
+
+{$parameters[$hookName]}
+EOF;
+}
+
+    $content .= <<<EOF
+
+
+## Hook call in codebase
 
 ```php
 {$hookArray[0]["fullCall"]}
@@ -220,7 +278,7 @@ function findHooksInFileRegex($file, $stripDir, $patternType, $pattern, &$count)
 
     if(!empty($result[0])){ var_dump($result);
         for($i = 0; $i < sizeof($result[0]); $i++){
-            if(isset($result[2][$i])){
+            if(isset($result[2][$i]) && ($patternType == "legacy" || $patternType == "symfony")){
                 $hookName = cleanHookName(cleanString($result[2][$i]));
             } else {
                 $hookName = cleanHookName(cleanString($result[1][$i]));
@@ -315,7 +373,23 @@ function cleanHookName($hookName)
         '--helperListConfiguration-legacyControllerName--',
         '--Containercamelizethis-gridId--',
         '--Containercamelizedefinition-getId--',
-        '--this-camelizeformBuilder-getName--'
+        '--this-camelizeformBuilder-getName--',
+        'LayoutVariablesBuilderInterfaceBUILDMAILLAYOUTVARIABLESHOOK',
+        'ThemeCatalogInterfaceLISTMAILTHEMESHOOK',
+        'selfHOOKADDURLS',
+        'selfDISPATCHERAFTERACTION',
+        'selfDISPATCHERBEFOREACTION',
+        'MailTemplateRendererInterfaceGETMAILLAYOUTTRANSFORMATIONS',
+        'LayoutVariablesBuilderInterfaceBUILDMAILLAYOUTVARIABLESHOOK',
+        '--hookName--',
+        'actionBeforeUpdate--Containercamelize',
+        'actionBeforeCreate--Containercamelize',
+        'actionAfterUpdate--Containercamelize',
+        'actionAfterCreate--Containercamelize',
+        'actionBeforeAjaxDie--controller--method',
+        'actionAjaxDie--controller--method--Before',
+        'action--this-camelize',
+        'action--Containercamelize'
     ], [
         '<ClassName><Action>',
         '<ClassName>',
@@ -325,7 +399,24 @@ function cleanHookName($hookName)
         '<LegacyControllerName>',
         '<GridId>',
         '<DefinitionId>',
-        '<FormName>'
+        '<FormName>',
+        'actionBuildMailLayoutVariables',
+        'actionListMailThemes',
+        'gSitemapAppendUrls',
+        'actionDispatcherAfter',
+        'actionDispatcherBefore',
+        'actionGetMailLayoutTransformations',
+        'actionBuildMailLayoutVariables',
+        '<HookName>',
+        'actionBeforeUpdate<FormName>FormHandler',
+        'actionBeforeCreate<FormName>FormHandler',
+        'actionAfterUpdate<FormName>FormHandler',
+        'actionAfterCreate<FormName>FormHandler',
+        'actionBeforeAjaxDie<Controller><Method>',
+        'actionAjaxDie<Controller><Method>Before',
+        'action<FormName>FormDataProviderDefaultData',
+        'action<DefinitionId>GridPresenterModifier'
+
     ], $hookName);
 
     return $hookName;
@@ -347,6 +438,18 @@ function extractHookDescription($xmlFile){
     return $hookDescriptions;
 }
 
+function extractHookAliases($xmlFile){
+    $xmlContent = simplexml_load_file($xmlFile);
+    $hookAliases = [];
+    foreach($xmlContent->entities->hook_alias as $node){ 
+        if(!isset($hookAliases[$node->name->__toString()])){
+            $hookAliases[$node->name->__toString()] = [];
+        }
+        $hookAliases[$node->name->__toString()][] = $node->alias->__toString();
+    }
+    return $hookAliases;
+}
+
 function extractActualDocumentation($actualDocumentationUrl)
 {
     $documentedHooks = [];
@@ -365,4 +468,43 @@ function extractActualDocumentation($actualDocumentationUrl)
         }
     }
     return $documentedHooks;
+}
+
+function extractParameters($parametersReferenceMd)
+{
+    $content = file($parametersReferenceMd);
+
+    $parameters = [];
+    $currentHookName = null;
+    $parametersString = null;
+    $skipLines = 25; // skip 25 first lines
+
+    $capturing = false;
+
+    for($i = $skipLines; $i < sizeof($content); $i++){
+        $currentLine = $content[$i];
+        if(substr($currentLine, 0, 1) != " " && substr($currentLine, 0, 1) != "\n" && substr($currentLine, 0, 1) != ":"){
+            $currentHookName = trim($currentLine);
+            $parametersString = "";
+            $capturing = false;
+        }
+
+        if(in_array(trim($currentLine), ['```php', '```html.twig'])){
+            $capturing = true;
+            $currentLine = trim($currentLine) . "\n";
+        }
+
+        if(trim($currentLine) == '```'){
+            $capturing = false;
+            $parameters[$currentHookName] = $parametersString . trim($currentLine);
+        }
+
+        if($capturing){
+            $parametersString .= $currentLine;
+        }
+
+        
+    }
+
+    return $parameters;
 }
